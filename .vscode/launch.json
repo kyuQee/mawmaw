@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug mawmaw (gdb)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/server/mawmaw",
+            "args": [],
+            "cwd": "${workspaceFolder}/build/server",
+            "MIMode": "gdb",
+            "preLaunchTask": "CMake: Build"
+        }
+    ]
+}

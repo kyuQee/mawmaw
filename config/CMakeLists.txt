@@ -1,0 +1,3 @@
+add_library(mawmaw_config INTERFACE)
+target_include_directories(mawmaw_config INTERFACE ${CMAKE_SOURCE_DIR})
+target_compile_features(mawmaw_config INTERFACE cxx_std_20)

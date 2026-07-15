@@ -1,0 +1,16 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.generator": "Ninja",
+    "cmake.configureOnOpen": true,
+    "cmake.exportCompileCommandsFile": true,
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "files.associations": {
+        "*.hpp": "cpp"
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/third_party/wasm3/test": true,
+        "**/third_party/wasm3/platforms": true
+    }
+}
