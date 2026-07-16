@@ -33,7 +33,7 @@ namespace fs = std::filesystem;
 namespace mawmaw::core
 {
 
-    Telemetry::Telemetry(StreamRouter &router, WindowRegistry &registry, publisher::Publisher& publisher)
+    Telemetry::Telemetry(StreamRouter &router, WindowRegistry &registry, publisher::Publisher &publisher)
         : router_(router), registry_(registry), publisher_(publisher) {}
 
     Telemetry::~Telemetry()
@@ -103,10 +103,7 @@ namespace mawmaw::core
                                   << PAYLOAD_MAX << "), dropping\n";
                         continue;
                     }
-                    // Directly publish to the publisher instead of routing
-                    ScriptOutput out;
-                    out.emitted.push_back(std::move(ev));
-                    publisher_.handle_output(std::move(out));
+                    router_.route(std::move(ev));
                 }
             }
 
@@ -126,9 +123,7 @@ namespace mawmaw::core
                                   << PAYLOAD_MAX << "), dropping\n";
                         continue;
                     }
-                    ScriptOutput out;
-                    out.emitted.push_back(std::move(ev));
-                    publisher_.handle_output(std::move(out));
+                    router_.route(std::move(ev));
                 }
             }
         }
@@ -390,21 +385,24 @@ static PipelineState start_pipeline(
                 (*router_slot)->route(std::move(ev));
         });
 
-    // Break cycle: router holds a weak_ptr to publisher
     std::weak_ptr<mawmaw::publisher::Publisher> weak_pub = pub;
     auto router = std::make_shared<mawmaw::core::StreamRouter>(
         *state.registry,
-        [weak_pub](mawmaw::core::ScriptOutput out)
+        [weak_pub](mawmaw::core::ScriptOutput /*out*/)
         {
-            if (auto sp = weak_pub.lock())
-                sp->handle_output(std::move(out));
+            // no‑op – script threads will route emitted events directly
         });
 
     *router_slot = router;
     state.router = router;
     state.publisher = pub;
 
-    // ---- Create telemetry (pass publisher) ----
+    // ---- Set up explicit routing ----
+    router->set_publisher(pub.get());
+    auto routes = mawmaw::config::parse_routes(cfg);
+    router->set_routes(routes);
+
+    // ---- Create telemetry ----
     state.telemetry = std::make_unique<mawmaw::core::Telemetry>(*router, *state.registry, *pub);
     state.telemetry->set_enabled(true);
     router->set_telemetry(state.telemetry.get());
@@ -449,6 +447,7 @@ static PipelineState start_pipeline(
     {
         size_t registry_idx;
         size_t queue_idx;
+        std::string output_stream;    // from emits (first value)
         std::function<mawmaw::core::ScriptOutput(const mawmaw::core::Event &)> dispatch;
     };
     std::vector<ScriptThreadData> script_data;
@@ -460,6 +459,12 @@ static PipelineState start_pipeline(
         const std::string &runtime = sec->get("runtime");
         const std::string &path = sec->get("path");
         const std::string &trigger = sec->get("trigger");
+
+        // Extract first value from emits (if any)
+        std::string output_stream;
+        auto emits_vec = mawmaw::config::get_script_emits(*sec);
+        if (!emits_vec.empty())
+            output_stream = emits_vec[0];
 
         if (id.empty() || runtime.empty() || path.empty() || trigger.empty())
         {
@@ -541,8 +546,9 @@ static PipelineState start_pipeline(
             };
 
             router->register_handler(script->id(), std::move(sub), dispatch, queue_idx);
-            script_data.push_back({script_idx, queue_idx, std::move(dispatch)});
+            script_data.push_back({script_idx, queue_idx, output_stream, std::move(dispatch)});
             std::cout << "Script: [" << runtime << "] id=" << id << " trigger=" << trigger
+                      << " output_as=" << (output_stream.empty() ? "(same as script)" : output_stream)
                       << " (threaded, zero-copy=" << (script->mode() == mawmaw::core::ScriptMode::ZeroCopy) << ")\n";
         }
         catch (const std::exception &e)
@@ -554,15 +560,26 @@ static PipelineState start_pipeline(
     // ---- Start script threads ----
     for (auto &data : script_data)
     {
-        state.script_threads.emplace_back([router, pub, data]
-                                          {
+        state.script_threads.emplace_back([router, data] {
             while (g_running) {
                 auto ev_opt = router->wait_for_trigger(data.queue_idx);
                 if (!ev_opt) break;
                 auto out = data.dispatch(*ev_opt);
-                if (!out.emitted.empty())
-                    pub->handle_output(std::move(out));
-            } });
+                // Rename emitted streams if output_stream is configured
+                if (!data.output_stream.empty()) {
+                    for (auto& ev : out.emitted) {
+                        std::strncpy(ev.stream_id, data.output_stream.c_str(),
+                                     sizeof(ev.stream_id) - 1);
+                        ev.stream_id[sizeof(ev.stream_id) - 1] = '\0';
+                        router->route(std::move(ev));
+                    }
+                } else {
+                    for (auto& ev : out.emitted) {
+                        router->route(std::move(ev));
+                    }
+                }
+            }
+        });
     }
 
     // ---- Load and start ingestors ----
@@ -570,6 +587,8 @@ static PipelineState start_pipeline(
     {
         const std::string &id = sec->get("id");
         const std::string &plugin = sec->get("plugin");
+        std::string rename_to = sec->get("as");
+
         if (plugin.empty())
         {
             std::cerr << "[ingestor] missing 'plugin' — skipping\n";
@@ -579,9 +598,20 @@ static PipelineState start_pipeline(
         {
             auto handle = mawmaw::ingestor::PluginHandle::load(plugin);
             std::cout << "Ingestor: [" << handle->name() << " v" << handle->version()
-                      << "] id=" << id << " plugin=" << plugin << "\n";
-            handle->start([router](mawmaw::core::Event ev)
-                          { router->route(std::move(ev)); });
+                      << "] id=" << id << " plugin=" << plugin;
+            if (!rename_to.empty())
+                std::cout << " (renaming stream to '" << rename_to << "')";
+            std::cout << "\n";
+
+            handle->start([router, rename_to](mawmaw::core::Event ev) {
+                if (!rename_to.empty()) {
+                    std::strncpy(ev.stream_id, rename_to.c_str(),
+                                 sizeof(ev.stream_id) - 1);
+                    ev.stream_id[sizeof(ev.stream_id) - 1] = '\0';
+                }
+                router->route(std::move(ev));
+            });
+
             state.plugins.push_back(std::move(handle));
         }
         catch (const std::exception &e)
@@ -595,33 +625,26 @@ static PipelineState start_pipeline(
         throw std::runtime_error("No ingestors loaded");
     }
 
-    // ---- Start telemetry ----
     state.telemetry->start();
-
     return state;
-
 }
+
 // ============================================================================
 // STOP pipeline
 // ============================================================================
 
-
 static void stop_pipeline(PipelineState &state)
 {
-    // 0. Drop telemetry link in router (scripts won't use it via router)
     if (state.router)
         state.router->set_telemetry(nullptr);
 
-    // 1. Stop ingestors – no new events will be generated
     state.plugins.clear();
 
-    // 2. Stop the telemetry emitter thread (but keep the object alive)
-    if (state.telemetry) {
-        state.telemetry->stop();   // joins the emitter thread
-        // Do NOT reset() yet – script threads may still need it
+    if (state.telemetry)
+    {
+        state.telemetry->stop();
     }
 
-    // 3. Wake up all script threads and wait for them to finish
     if (state.router)
         state.router->stop_all_queues();
 
@@ -630,20 +653,16 @@ static void stop_pipeline(PipelineState &state)
             t.join();
     state.script_threads.clear();
 
-    // 4. NOW it is safe to destroy telemetry – no threads are using it
-    if (state.telemetry) {
+    if (state.telemetry)
+    {
         state.telemetry.reset();
     }
 
-    // 5. Destroy the registry (releases script objects held by the registry)
     state.registry_holder.reset();
-
-    // 6. Reset the router
     state.router.reset();
-
-    // 7. Reset the publisher
     state.publisher.reset();
 }
+
 // ============================================================================
 // Reload monitor
 // ============================================================================

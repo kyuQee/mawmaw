@@ -1,5 +1,6 @@
 #pragma once
 #include "publisher/publisher.hpp"
+#include "publisher/websocket_endpoint.hpp"
 #include "config/config.hpp"
 #include <algorithm>
 #include <fstream>
@@ -34,7 +35,6 @@ private:
 };
 
 // file — appends one line per event to a log file
-// Config: path = ./events.log
 class FileEndpoint final : public IEndpoint {
 public:
     FileEndpoint(const std::string& id, const std::string& path)
@@ -58,7 +58,7 @@ private:
     std::ofstream out_;
 };
 
-// null — silently drops all events (benchmark / stub)
+// null — silently drops all events
 class NullEndpoint final : public IEndpoint {
 public:
     explicit NullEndpoint(const std::string& id) : id_(id) {}
@@ -68,15 +68,7 @@ private:
     std::string id_;
 };
 
-// ---- TelemetryStdoutEndpoint ----
-//
-// Both telemetry schemas can now arrive split across multiple events
-// ("chunks") because PAYLOAD_MAX (256 bytes) is fixed and a single script/
-// stream table may not fit in one event. Every chunk of one emission shares
-// the same timestamp_ns, which we use as the reassembly group id. This
-// endpoint buffers chunks per schema until a group is complete, then renders
-// an updated dashboard (clears screen and prints both stream and script
-// metrics tables in a unified view).
+// TelemetryStdoutEndpoint – renders the dashboard
 class TelemetryStdoutEndpoint final : public IEndpoint {
 public:
     explicit TelemetryStdoutEndpoint(const std::string& id) : id_(id) {}
@@ -84,7 +76,6 @@ public:
     std::string name() const override { return id_; }
 
     void publish(const core::Event& ev) override {
-        // Only handle telemetry streams
         if (std::strncmp(ev.stream_id, "telemetry", 9) != 0 &&
             std::strncmp(ev.stream_id, "telemetry.", 10) != 0)
             return;
@@ -107,8 +98,6 @@ private:
     static uint16_t read_u16(const uint8_t* p) {
         return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
     }
-
-    // ---------------- streams_v1 reassembly ----------------
 
     struct StreamGroup {
         uint64_t timestamp_ns = 0;
@@ -169,8 +158,6 @@ private:
         }
     }
 
-    // ---------------- scripts_v1 reassembly ----------------
-
     struct ScriptEntry {
         std::string id;
         uint64_t count, avg, min, max;
@@ -230,25 +217,18 @@ private:
         }
     }
 
-    // ---- Rendering helpers (dashboard) ----
-
     void render() {
-        // Clear screen and move cursor to home
         std::cout << "\033[2J\033[H";
-
-        // Dashboard header
         std::cout << "+------------------------------------------------------------+\n";
         std::cout << "|                 MAWMAW Telemetry Dashboard                  |\n";
         std::cout << "+------------------------------------------------------------+\n";
 
-        // Stream metrics
         if (latest_stream_) {
             print_stream_group(*latest_stream_);
         } else {
             std::cout << "  (no stream metrics yet)\n";
         }
 
-        // Script metrics
         if (latest_script_) {
             print_script_group(*latest_script_);
         } else {
@@ -258,10 +238,9 @@ private:
         std::cout.flush();
     }
 
-    // ---- Pretty printing for streams (ASCII) ----
     void print_stream_group(const StreamGroup& g) const {
-        const int id_width = 32;   // max stream ID length
-        const int count_width = 12; // enough for large counts
+        const int id_width = 32;
+        const int count_width = 12;
 
         auto print_sep = [&](char left, char mid, char right, char fill) {
             std::cout << left;
@@ -277,7 +256,6 @@ private:
                       << " |\n";
         };
 
-        // Header with timestamp
         std::cout << "\n  >> STREAM METRICS  (timestamp: " << g.timestamp_ns << " ns)\n";
         std::cout << "-----------------------------------------------------------------\n";
         std::cout << "  total events (in) : " << g.total_events << "\n";
@@ -288,27 +266,23 @@ private:
         if (g.entries.empty()) {
             std::cout << "  (no per-stream activity)\n";
         } else {
-            // Table header
             print_sep('+', '+', '+', '-');
             std::cout << "| " << std::left << std::setw(id_width) << "Stream ID"
                       << " | " << std::right << std::setw(count_width) << "Count"
                       << " |\n";
             print_sep('+', '+', '+', '-');
 
-            // Rows
             for (const auto& [sid, count] : g.entries) {
                 print_row(sid, count);
             }
 
-            // Footer
             print_sep('+', '+', '+', '-');
         }
     }
 
-    // ---- Pretty printing for scripts (ASCII) ----
     void print_script_group(const ScriptGroup& g) const {
-        const int id_width = 32;   // max script ID length
-        const int num_width = 10;  // for counts and latencies (µs)
+        const int id_width = 32;
+        const int num_width = 10;
 
         auto print_sep = [&](char left, char mid1, char mid2, char mid3, char mid4, char right, char fill) {
             std::cout << left;
@@ -339,7 +313,6 @@ private:
         if (g.entries.empty()) {
             std::cout << "  (no script activity)\n";
         } else {
-            // Table header
             print_sep('+', '+', '+', '+', '+', '+', '-');
             std::cout << "| " << std::left << std::setw(id_width) << "Script ID"
                       << " | " << std::right << std::setw(num_width) << "Calls"
@@ -349,7 +322,6 @@ private:
                       << " |\n";
             print_sep('+', '+', '+', '+', '+', '+', '-');
 
-            // Rows
             for (const auto& e : g.entries) {
                 double avg_us = (e.count > 0) ? e.avg / 1000.0 : 0.0;
                 double min_us = (e.count > 0) ? e.min / 1000.0 : 0.0;
@@ -357,35 +329,44 @@ private:
                 print_row(e.id, e.count, avg_us, min_us, max_us);
             }
 
-            // Footer
             print_sep('+', '+', '+', '+', '+', '+', '-');
         }
     }
 
     std::string id_;
-
-    // Dashboard state (mutex‑protected)
     mutable std::mutex render_mutex_;
     std::optional<StreamGroup> latest_stream_;
     std::optional<ScriptGroup> latest_script_;
 };
 
-// Factory — create an endpoint from a [publisher] config section
+// Factory – create an endpoint from a [publisher] config section
 inline std::shared_ptr<IEndpoint> make_endpoint(const config::Section& sec) {
-    const std::string& id   = sec.get("id");
-    const std::string& type = sec.get("type");
+    std::string id   = sec.get("id");     // copy
+    std::string type = sec.get("type");   // copy
+
     if (id.empty())   throw std::runtime_error("[publisher] missing 'id'");
     if (type.empty()) throw std::runtime_error("[publisher] '" + id + "' missing 'type'");
-    if (type == "stdout") return std::make_shared<StdoutEndpoint>(id);
-    if (type == "null")   return std::make_shared<NullEndpoint>(id);
+
+    if (type == "stdout")    return std::make_shared<StdoutEndpoint>(id);
+    if (type == "null")      return std::make_shared<NullEndpoint>(id);
+    if (type == "telemetry") return std::make_shared<TelemetryStdoutEndpoint>(id);
+
     if (type == "file") {
-        const std::string& path = sec.get("path");
-        if (path.empty()) throw std::runtime_error("[publisher] '" + id + "' type=file requires 'path'");
+        std::string path = sec.get("path"); // copy
+        if (path.empty())
+            throw std::runtime_error("[publisher] '" + id + "' type=file requires 'path'");
         return std::make_shared<FileEndpoint>(id, path);
     }
-    if (type == "telemetry") {
-        return std::make_shared<TelemetryStdoutEndpoint>(id);
+
+    if (type == "websocket") {
+        std::string port_str = sec.get("port"); // copy
+        if (port_str.empty())
+            throw std::runtime_error("[publisher] '" + id + "' type=websocket requires 'port'");
+        std::string host = sec.get("host", "0.0.0.0"); // copy
+        uint16_t port = static_cast<uint16_t>(std::stoi(port_str));
+        return std::make_shared<WebSocketEndpoint>(id, host, port);
     }
+
     throw std::runtime_error("[publisher] '" + id + "' unknown type '" + type + "'");
 }
 

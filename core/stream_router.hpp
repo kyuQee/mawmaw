@@ -2,6 +2,7 @@
 #pragma once
 #include "core/window_registry.hpp"
 #include "core/telemetry.hpp"
+#include "publisher/publisher.hpp"   // for Publisher reference
 #include <iostream>
 #include <atomic>
 #include <cstring>
@@ -40,6 +41,16 @@ public:
         telemetry_.store(tel, std::memory_order_release);
     }
 
+    // Set the routing table: stream → list of target IDs (script or publisher)
+    void set_routes(const std::unordered_map<std::string, std::vector<std::string>>& routes) {
+        route_table_ = routes;
+    }
+
+    // Set the publisher so we can forward events to endpoints
+    void set_publisher(publisher::Publisher* pub) {
+        publisher_ = pub;
+    }
+
     // Create a new per-script event queue. Returns its index.
     size_t register_script_queue(size_t ring_capacity = 1024) {
         std::lock_guard<std::mutex> lock(queues_mutex_);
@@ -57,20 +68,30 @@ public:
         handlers_[script_id] = HandlerEntry{std::move(sub), std::move(dispatch), queue_index};
     }
 
-    // Hot Ingestion Path: Pure zero-allocation routing
+    // Hot Ingestion Path: use route table for explicit delivery.
     void route(Event ev) {
         Telemetry* tel = telemetry_.load(std::memory_order_acquire);
         if (tel) {
             tel->record_event(ev.stream_id);
         }
 
-        // 1. Commit the event directly to the lock-free ring buffer (stream rings)
+        // 1. Commit the event to the global window registry
         registry_.push(ev);
 
-        // 2. Enqueue to any script whose trigger matches this event's stream
-        for (auto& [id, entry] : handlers_) {
-            if (ev.stream_is(entry.sub.trigger_stream.c_str())) {
-                size_t qidx = entry.queue_index;
+        // 2. Lookup the stream in the route table
+        auto it = route_table_.find(ev.stream_id);
+        if (it == route_table_.end()) {
+            // No route defined – event is dropped (no processing, no publishing)
+            return;
+        }
+
+        // 3. For each target, decide if it's a script or a publisher endpoint
+        for (const auto& target_id : it->second) {
+            // Check if target is a script handler
+            auto handler_it = handlers_.find(target_id);
+            if (handler_it != handlers_.end()) {
+                // Enqueue to that script's queue
+                size_t qidx = handler_it->second.queue_index;
                 if (qidx < queues_.size()) {
                     auto& q = *queues_[qidx];
                     q.ring.write(ev);   // lock-free write
@@ -79,6 +100,16 @@ public:
                         q.cv.notify_one();
                     }
                 }
+                continue;
+            }
+
+            // Otherwise, try to publish to a publisher endpoint
+            if (publisher_ && publisher_->has_endpoint(target_id)) {
+                publisher_->publish_to(ev, target_id);
+            } else {
+                // Unknown target – log or ignore
+                std::cerr << "[StreamRouter] Unknown route target: " << target_id
+                          << " for stream " << ev.stream_id << "\n";
             }
         }
     }
@@ -126,8 +157,6 @@ public:
         return on_output_;
     }
 
-
-
     ~StreamRouter() { std::cout << "StreamRouter destroyed\n"; }
 
 private:
@@ -142,7 +171,10 @@ private:
     WindowRegistry& registry_;
     OutputFn        on_output_;
     std::atomic<Telemetry*> telemetry_{nullptr};
+    publisher::Publisher* publisher_ = nullptr;   // not owned
+
     std::unordered_map<std::string, HandlerEntry> handlers_;
+    std::unordered_map<std::string, std::vector<std::string>> route_table_;   // stream → targets
 
     std::mutex queues_mutex_;
     std::vector<std::unique_ptr<ScriptQueue>> queues_;

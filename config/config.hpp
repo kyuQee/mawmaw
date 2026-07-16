@@ -5,38 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-// ── MAWMAW config format ───────────────────────────────────────────────────
-//
-// INI-style. Each section ([ingestor], [script], [publisher]) declares one
-// component. Sections of the same type can repeat. Order doesn't matter.
-// Comments: lines starting with # or ;
-//
-// Example:
-//   [ingestor]
-//   id     = market_feed
-//   plugin = ./plugin_fix.so
-//
-//   [publisher]
-//   id   = stdout
-//   type = stdout
-//
-//   [publisher]
-//   id   = event_log
-//   type = file
-//   path = ./output.log
-//
-//   [script]
-//   id      = signal_detector
-//   runtime = python
-//   path    = ./scripts/signal.py
-//   trigger = trades
-//   window  = trades, count, 64
-//   window  = news, time, 5000000000
-//
-// Window format: stream_id, count|time, N
-//   count — last N events
-//   time  — events within last N nanoseconds
+#include <sstream>
 
 namespace mawmaw::config {
 
@@ -73,7 +42,7 @@ inline std::string trim(const std::string& s) {
 }
 // Keys allowed to appear more than once per section
 inline bool is_multi_key(const std::string& key) {
-    return key == "window" || key == "endpoint";
+    return key == "window" || key == "endpoint" || key == "emits";
 }
 } // namespace detail
 
@@ -123,11 +92,68 @@ inline Config parse(const std::string& path) {
     return cfg;
 }
 
-// Parses "stream_id, count|time, N" 
+// ── Parsing helpers for routes, emits, and ingestor renaming ──
+
+inline std::vector<std::string> split_comma(const std::string& s) {
+    std::vector<std::string> result;
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        item = detail::trim(item);
+        if (!item.empty()) result.push_back(item);
+    }
+    return result;
+}
+
+// Parse [routes] sections into a map: stream → list of target IDs
+inline std::unordered_map<std::string, std::vector<std::string>>
+parse_routes(const Config& cfg) {
+    std::unordered_map<std::string, std::vector<std::string>> routes;
+    for (const auto* sec : cfg.of_type("routes")) {
+        // Each key is a stream, value is comma‑separated targets
+        for (const auto& [key, val] : sec->kv) {
+            auto targets = split_comma(val);
+            if (!targets.empty()) {
+                auto& existing = routes[key];
+                existing.insert(existing.end(), targets.begin(), targets.end());
+            }
+        }
+        // Also handle multi‑key routes (unlikely, but we combine)
+        auto it = sec->multi.find("routes"); // not used, but for completeness
+        // We only use kv above.
+    }
+    return routes;
+}
+
+// Get the list of streams this script emits (from "emits" key, possibly multi‑line)
+inline std::vector<std::string> get_script_emits(const Section& sec) {
+    std::vector<std::string> result;
+    // Check single key first
+    if (sec.has("emits")) {
+        auto parts = split_comma(sec.get("emits"));
+        result.insert(result.end(), parts.begin(), parts.end());
+    }
+    // Then multi‑key lines (if any)
+    auto it = sec.multi.find("emits");
+    if (it != sec.multi.end()) {
+        for (const auto& val : it->second) {
+            auto parts = split_comma(val);
+            result.insert(result.end(), parts.begin(), parts.end());
+        }
+    }
+    return result;
+}
+
+// Get the optional "as" rename for an ingestor (returns empty string if not set)
+inline std::string get_ingestor_as(const Section& sec) {
+    return sec.get("as", "");
+}
+
+// Parses "stream_id, count|time, N"  (unchanged)
 struct ParsedWindow {
     std::string stream_id;
     bool        time_based = false;
-    uint64_t    n          = 0;  // event count or nanoseconds
+    uint64_t    n          = 0;
 };
 
 inline ParsedWindow parse_window(const std::string& val) {

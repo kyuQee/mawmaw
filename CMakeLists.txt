@@ -21,6 +21,13 @@ else()
   add_compile_options(-O2 -g)
 endif()
 
+if(TARGET m3)
+    target_compile_options(m3 PRIVATE
+        -w
+    )
+endif()
+
+
 include_directories(${CMAKE_SOURCE_DIR})
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
