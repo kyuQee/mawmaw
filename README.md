@@ -8,6 +8,15 @@
 
 ---    
 
+## Guides
+
+plugin guide: [plugin_guide.md](https://github.com/kyuQee/mawmaw/blob/master/ingestor/plugin_guide.md)
+config guide: [config_guide.md](https://github.com/kyuQee/mawmaw/blob/master/config/config_guide.md)
+
+---    
+
+
+
 
 ## Cloning
 ```bash
@@ -132,4 +141,7 @@ brew install \
 
 dont use
 
-or use Visual Studio Build Tools with the **Desktop development with C++** workload.
+or wsl2 (not preferred)
+
+
+
