@@ -2,12 +2,12 @@
 
 <img src="MAWMAW_logo.png" alt="MAWMAW" width="420">
 
-# MAWMAW
-
 **A high-performance telemetry and event processing engine.**
 
 </div>
----
+
+---    
+
 
 ## Cloning
 ```bash
