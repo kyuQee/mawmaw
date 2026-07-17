@@ -45,6 +45,22 @@ git clone --recurse-submodules https://github.com/kyuQee/mawmaw.git
 
 ---
 
+## Dependencies
+
+MAWMAW requires the following tools:
+
+- A C++20 compiler (GCC or Clang)
+- CMake (3.22+)
+- Ninja
+- LLVM + LLD
+- **Python 3**
+- **Python development headers** (`Python.h`)
+
+> **Note:** Installing Python alone is **not sufficient**. The Python development package is required because MAWMAW links against the Python C API.
+
+---    
+
+
 
 ## Ubuntu / Debian
 
