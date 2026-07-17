@@ -1,43 +1,58 @@
 # MAWMAW, Complete Documentation
 
-**AI generated read with caution**
+**AI generated, read with caution**
 
 ## Part 1: Overview
 
-**MAWMAW** is a server-side data pipeline engine written in C++. It is designed to ingest data from arbitrary sources, process it through user-defined scripts, and publish results to arbitrary destinations, all without recompiling the core binary.
+**MAWMAW** is a high-performance, plugin-driven event processing engine written in modern C++. It ingests events from arbitrary sources, executes user-defined processing pipelines, and publishes results to arbitrary destinations without requiring changes to the core executable.
+
+Rather than embedding application-specific logic into the engine, MAWMAW treats all incoming data as events. Every stage of the pipeline—from ingestion to transformation to publishing—is modular and configurable at runtime.
 
 ### What Problems Does MAWMAW Solve?
 
-Data pipelines are everywhere. You have data coming from:
-- Financial market data feeds (FIX, WebSocket)
-- Telemetry from IoT devices
-- Rocket telemetry (yes, really)
-- CSV files dropped into a directory
-- Database change data capture
-- Webhook endpoints
+Many systems continuously produce streams of events:
 
-The standard approach is:
-- Write a monolith that recompiles every time business logic changes
-- Or use a heavy framework like Kafka Streams or Flink that adds enormous complexity
-- Or duct-tape together a bunch of microservices that become impossible to debug
+* IoT telemetry
+* Industrial sensors
+* Financial market feeds
+* Application logs
+* Database change streams
+* Webhooks
+* Network packets
+* CSV or binary data sources
 
-MAWMAW's answer is radically different: **The core never changes. Everything else is pluggable at runtime.**
-- **Ingestors** are `.so` files loaded via `dlopen`. Drop a new one in, no recompile.
-- **Scripts** are registered handlers in the config file. Swap them at runtime.
-- **Publisher endpoints** are registered in config. Add new ones without touching core.
+Regardless of where they originate, these streams often require the same operations:
+
+* Filtering
+* Validation
+* Transformation
+* Aggregation
+* Routing
+* Alert generation
+* Enrichment
+* Forwarding to storage or downstream services
+
+Traditionally, these processing pipelines become tightly coupled to application code. Even small changes to business logic often require modifying and rebuilding the entire application.
+
+MAWMAW separates the event-processing engine from the application logic.
+
+The engine is responsible only for moving events through a configurable processing pipeline. Everything else is supplied as runtime components.
+
+* **Ingestors** are shared libraries loaded dynamically using `dlopen()`. New data sources can be added without recompiling the engine.
+* **Scripts** define the event processing logic and are registered through configuration.
+* **Publishers** determine where processed events are sent, allowing outputs to be changed independently of the core engine.
+
+The result is a reusable event-processing platform that remains unchanged while application-specific behaviour evolves independently.
 
 ### Key Architectural Properties
 
-#### 1. Recursivity by Default
-Every event a script emits goes back through the pipeline automatically. A script processing `trades` can emit `signal`, which another script can subscribe to, which emits `risk_alerts`, which a third script transforms into `execution_instructions`. This is not a special mode, it is just how the system works. A cycle guard (`lineage_depth`) prevents infinite loops.
-
-#### 2. No UI, No CLI
+#### 1. No UI, No CLI
 MAWMAW runs as a pure server. Any control surface connects to it through publisher endpoints. This is intentional, a UI is a client, MAWMAW is the backend. This keeps the core clean and focused on data processing.
 
-#### 3. Zero-Heap Data Path
+#### 2. Zero-Heap Data Path
 The `Event` struct is exactly 328 bytes on x86_64. It contains no pointers, no heap allocations, no `std::vector`, no `std::string`. This means the entire pipeline can be lock-free and allocation-free in the hot path. Events are copied, moved, and stored in ring buffers without ever touching the heap.
 
-#### 4. Two Execution Modes
+#### 3. Two Execution Modes
 Scripts can declare one of two modes:
 
 | Mode | What You Get | When To Use |
@@ -45,7 +60,7 @@ Scripts can declare one of two modes:
 | **ZeroCopy** | A `RingView`, a 24-byte descriptor pointing directly into ring buffer memory. No allocation, no copy. | Fast scripts that take microseconds (native C++, WASM). |
 | **Snapshot** | A `std::vector`, owned copies of every event in the window. Allocation and copy cost. | Slow scripts that take milliseconds (Python, ML inference). |
 
-#### 5. Language-Agnostic Scripting
+#### 4. Language-Agnostic Scripting
 Scripts can be written in:
 - **Python**, via CPython embedding (`pybind11`-style, but hand-rolled)
 - **WebAssembly (WASM)**, via the Wasm3 interpreter
