@@ -1,4 +1,7 @@
 add_executable(mawmaw main.cpp)
+
+set_target_properties(mawmaw PROPERTIES ENABLE_EXPORTS ON)
+
 target_link_libraries(mawmaw PRIVATE
     mawmaw_config
     mawmaw_core
