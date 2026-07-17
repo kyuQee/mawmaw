@@ -44,23 +44,20 @@ git clone --recurse-submodules https://github.com/kyuQee/mawmaw.git
 ```
 
 ---
-
 ## Dependencies
 
-MAWMAW requires the following tools:
+MAWMAW requires:
 
-- A C++20 compiler (GCC or Clang)
+- C++20 compiler (GCC or Clang)
 - CMake (3.22+)
 - Ninja
 - LLVM + LLD
-- **Python 3**
-- **Python development headers** (`Python.h`)
+- Python 3
+- Python development headers (`Python.h`)
 
-> **Note:** Installing Python alone is **not sufficient**. The Python development package is required because MAWMAW links against the Python C API.
+> **Note:** Installing Python alone is **not sufficient**. The Python development headers is required because MAWMAW links against the Python C API.
 
----    
-
-
+---
 
 ## Ubuntu / Debian
 
@@ -74,6 +71,8 @@ sudo apt install -y \
     llvm \
     cmake \
     ninja-build \
+    python3 \
+    python3-dev \
     libasan8 \
     libubsan1
 ```
@@ -91,6 +90,8 @@ sudo dnf install -y \
     lld \
     cmake \
     ninja-build \
+    python3 \
+    python3-devel \
     libasan \
     libubsan
 ```
@@ -108,6 +109,8 @@ sudo dnf install -y \
     lld \
     cmake \
     ninja-build \
+    python3 \
+    python3-devel \
     libasan \
     libubsan
 ```
@@ -123,10 +126,11 @@ sudo pacman -Syu --needed \
     llvm \
     lld \
     cmake \
-    ninja
+    ninja \
+    python
 ```
 
-(`libasan` and `libubsan` are provided with GCC.)
+(Python development headers are included with the `python` package.)
 
 ---
 
@@ -140,7 +144,9 @@ sudo zypper install \
     llvm \
     lld \
     cmake \
-    ninja
+    ninja \
+    python3 \
+    python3-devel
 ```
 
 (Sanitizer runtimes come with GCC.)
@@ -156,7 +162,9 @@ sudo apk add \
     llvm \
     lld \
     cmake \
-    ninja
+    ninja \
+    python3 \
+    python3-dev
 ```
 
 ---
@@ -168,8 +176,11 @@ brew install \
     llvm \
     cmake \
     ninja \
-    gcc
+    gcc \
+    python
 ```
+
+(Homebrew's Python includes the development headers.)
 
 ---
 
@@ -178,6 +189,3 @@ brew install \
 dont use
 
 or wsl2 (not preferred)
-
-
-
