@@ -8,11 +8,30 @@
 
 ---    
 
+
+**MAWMAW** is a high-performance, plugin-driven event processing engine written in modern C++.
+
+It ingests events from arbitrary sources, processes them through configurable pipelines, and publishes the results to arbitrary destinations—all without modifying or recompiling the core engine.
+
+Designed for applications where low latency, extensibility, and runtime configurability matter, MAWMAW can power telemetry systems, industrial automation, financial data pipelines, monitoring infrastructure, and other real-time event-driven applications.
+
+**Core principles**
+
+* Runtime-loadable plugins
+* Configurable processing pipelines
+* Native C++ performance
+* Hot-reloadable components
+* Source and destination agnostic
+* Minimal core, application-specific logic lives in plugins
+
+
+---    
+
 ## Guides
 
 plugin guide: [plugin_guide.md](https://github.com/kyuQee/mawmaw/blob/master/ingestor/plugin_guide.md)
 config guide: [config_guide.md](https://github.com/kyuQee/mawmaw/blob/master/config/config_guide.md)
-
+docs: [docs.md](https://github.com/kyuQee/mawmaw/blob/master/docs/docs.md)
 ---    
 
 
