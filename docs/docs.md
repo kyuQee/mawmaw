@@ -4,7 +4,7 @@
 
 ## Part 1: Overview
 
-**MAWMAW** is a server-side data pipeline engine written in C++20. It is designed to ingest data from arbitrary sources, process it through user-defined scripts, and publish results to arbitrary destinations, all without recompiling the core binary.
+**MAWMAW** is a server-side data pipeline engine written in C++. It is designed to ingest data from arbitrary sources, process it through user-defined scripts, and publish results to arbitrary destinations, all without recompiling the core binary.
 
 ### What Problems Does MAWMAW Solve?
 
