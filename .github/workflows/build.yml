@@ -1,0 +1,77 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # needed so the workflow can publish/overwrite the release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            lld \
+            llvm \
+            cmake \
+            ninja-build \
+            libasan8 \
+            libubsan1 \
+            python3 \
+            python3-dev
+
+      - name: Configure
+        # Real Release build (-O3). MAWMAW_NATIVE_ARCH=OFF requires the
+        # CMakeLists.txt change that decouples -O3 from -march=native (see
+        # chat) -- otherwise this still bakes in the runner's specific CPU
+        # and can crash on other machines.
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMAWMAW_NATIVE_ARCH=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Locate, strip, and package the binary
+        run: |
+          mkdir -p dist
+          BIN=$(find build -maxdepth 5 -type f -executable -name "mawmaw" | head -n1)
+          if [ -z "$BIN" ]; then
+            echo "Couldn't auto-find a 'mawmaw' executable under build/. Here's what's there:"
+            find build -maxdepth 5 -type f -executable
+            exit 1
+          fi
+          cp "$BIN" dist/mawmaw-linux-x86_64
+          strip dist/mawmaw-linux-x86_64   # drop debug symbols, shrink the shipped binary
+          chmod +x dist/mawmaw-linux-x86_64
+
+      - name: Upload run artifact (for manual inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mawmaw-linux-x86_64
+          path: dist/mawmaw-linux-x86_64
+          retention-days: 14
+
+      - name: Publish / update rolling "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest build (${{ github.sha }})"
+          body: "Automatically built from commit ${{ github.sha }} on ${{ github.ref_name }}."
+          prerelease: true
+          make_latest: false
+          files: dist/mawmaw-linux-x86_64
