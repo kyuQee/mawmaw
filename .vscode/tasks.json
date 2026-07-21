@@ -10,7 +10,8 @@
                 "-B", "build",
                 "-G", "Ninja",
                 "-DCMAKE_BUILD_TYPE=Debug",
-                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DMAWMAW_PAYLOAD_MAX=16376"
             ],
             "problemMatcher": []
         },
@@ -18,7 +19,7 @@
             "label": "CMake: Build",
             "type": "shell",
             "command": "cmake",
-            "args": ["--build", "build", "-DMAWMAW_PAYLOAD_MAX=8192"],
+            "args": ["--build", "build"],
             "group": { "kind": "build", "isDefault": true },
             "dependsOn": "CMake: Configure",
             "problemMatcher": ["$gcc"]
