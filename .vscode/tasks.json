@@ -18,7 +18,7 @@
             "label": "CMake: Build",
             "type": "shell",
             "command": "cmake",
-            "args": ["--build", "build"],
+            "args": ["--build", "build", "-DMAWMAW_PAYLOAD_MAX=8192"],
             "group": { "kind": "build", "isDefault": true },
             "dependsOn": "CMake: Configure",
             "problemMatcher": ["$gcc"]

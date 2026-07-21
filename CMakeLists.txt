@@ -9,6 +9,18 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+
+# ==============================================================================
+# Configure MAWMAW_PAYLOAD_MAX globally
+# ==============================================================================
+# Default to 256 if not set, but allow overriding via -DMAWMAW_PAYLOAD_MAX=8192
+if(NOT DEFINED MAWMAW_PAYLOAD_MAX)
+    set(MAWMAW_PAYLOAD_MAX 256)
+endif()
+add_compile_definitions(MAWMAW_PAYLOAD_MAX=${MAWMAW_PAYLOAD_MAX})
+message(STATUS "MAWMAW_PAYLOAD_MAX = ${MAWMAW_PAYLOAD_MAX}")
+
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   option(MAWMAW_NATIVE_ARCH "Target this exact machine's CPU (-march=native). OFF = portable binary." ON)
   if(MAWMAW_NATIVE_ARCH)

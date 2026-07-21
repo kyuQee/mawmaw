@@ -4,12 +4,16 @@
 
 namespace mawmaw::core {
 
+
+
+
+static constexpr size_t PAYLOAD_MAX = MAWMAW_PAYLOAD_MAX;    
 static constexpr size_t STREAM_ID_MAX  = 32;   // 31 chars + null
 static constexpr size_t SCHEMA_ID_MAX  = 16;   // 15 chars + null
-static constexpr size_t PAYLOAD_MAX    = 256;
+
 
 // Every byte flowing through MAWMAW is wrapped in this.
-// Fully inline — zero heap allocation. Fits in ~5 cache lines. (~328 bytes)
+// Fully inline — zero heap allocation. Fits in ~5 cache lines. (~328 bytes for 256 byte payload)
 struct Event {
     uint64_t timestamp_ns              = 0;  // Wall clock at ingest (ns since epoch)
     uint64_t sequence                  = 0;  // Monotonic counter, assigned by ingestor
