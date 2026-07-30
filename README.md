@@ -196,6 +196,6 @@ or wsl2 (not preferred)
 
 ## Known Issues
 
-* Python is linked at **compile time**, so user must build it on their system. (TO BE FIXED)
+* Python is linked at **compile time**, so user must build it on their system. (FIXED, Under Testing)
 * Memory Leaks from Python interpreter on shutdown.
 * Limited Endpoints (https, csv, influxDB, Prometheus, etc TO BE ADDED)
